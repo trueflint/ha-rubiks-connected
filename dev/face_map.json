@@ -1,0 +1,62 @@
+{
+  "U": {
+    "face": null,
+    "dir": null,
+    "description": "UP face CLOCKWISE 90\u00b0        (top face, turn right)"
+  },
+  "U'": {
+    "face": 5,
+    "dir": 3,
+    "description": "UP face COUNTER-CLOCKWISE 90\u00b0 (top face, turn left)"
+  },
+  "D": {
+    "face": 6,
+    "dir": 0,
+    "description": "DOWN face CLOCKWISE 90\u00b0       (bottom face, turn right when viewed from below)"
+  },
+  "D'": {
+    "face": 7,
+    "dir": 9,
+    "description": "DOWN face COUNTER-CLOCKWISE 90\u00b0"
+  },
+  "F": {
+    "face": 2,
+    "dir": 9,
+    "description": "FRONT face CLOCKWISE 90\u00b0      (Green face toward you, turn right)"
+  },
+  "F'": {
+    "face": 3,
+    "dir": 6,
+    "description": "FRONT face COUNTER-CLOCKWISE 90\u00b0"
+  },
+  "B": {
+    "face": 0,
+    "dir": 6,
+    "description": "BACK face CLOCKWISE 90\u00b0       (Blue face away from you, turn right from back)"
+  },
+  "B'": {
+    "face": 1,
+    "dir": 3,
+    "description": "BACK face COUNTER-CLOCKWISE 90\u00b0"
+  },
+  "R": {
+    "face": 8,
+    "dir": 0,
+    "description": "RIGHT face CLOCKWISE 90\u00b0      (Red face on right, turn down)"
+  },
+  "R'": {
+    "face": 9,
+    "dir": 9,
+    "description": "RIGHT face COUNTER-CLOCKWISE 90\u00b0"
+  },
+  "L": {
+    "face": 10,
+    "dir": 3,
+    "description": "LEFT face CLOCKWISE 90\u00b0       (Orange face on left, turn down)"
+  },
+  "L'": {
+    "face": 11,
+    "dir": 0,
+    "description": "LEFT face COUNTER-CLOCKWISE 90\u00b0"
+  }
+}
