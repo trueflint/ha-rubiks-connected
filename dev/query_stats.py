@@ -33,19 +33,33 @@ async def main() -> None:
     if not device:
         print("Device not found.")
         sys.exit(1)
-
     print(f"Found: {device.name} ({device.address})\nConnecting ...")
 
     responses = []
 
-    async with BleakClient(device) as client:
-        await client.start_notify(NOTIFY_UUID, lambda _, d: responses.append(bytes(d)))
-        await asyncio.sleep(1.0)  # let connection settle
-        await client.write_gatt_char(WRITE_UUID, bytes([0x50]), response=False)
-        await asyncio.sleep(0.5)
-        responses.clear()
-        await client.write_gatt_char(WRITE_UUID, bytes([0x51]), response=False)
-        await asyncio.sleep(2.0)
+    listen_only = "--listen" in sys.argv
+
+    try:
+        async with BleakClient(device) as client:
+            await client.start_notify(NOTIFY_UUID, lambda _, d: responses.append(bytes(d)))
+            await asyncio.sleep(0.5)
+            await client.write_gatt_char(WRITE_UUID, bytes([0x55]), response=False)  # handshake
+            if listen_only:
+                print("Listening for 5s after handshake (no further commands) ...")
+                await asyncio.sleep(5.0)
+            else:
+                await asyncio.sleep(0.5)
+                await client.write_gatt_char(WRITE_UUID, bytes([0x50]), response=False)
+                await asyncio.sleep(0.5)
+                responses.clear()
+                await client.write_gatt_char(WRITE_UUID, bytes([0x51]), response=False)
+                await asyncio.sleep(2.0)
+    except TimeoutError:
+        print("Connection timed out — cube may have gone back to sleep.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Connection error: {type(e).__name__}: {e}")
+        sys.exit(1)
 
     if not responses:
         print("No response received.")
@@ -53,14 +67,18 @@ async def main() -> None:
 
     for r in responses:
         print(f"\nRaw:     {r.hex(' ')}")
-        if len(r) >= 14 and r[0] == 0x2a and r[1] == 0x0c:
-            payload = r[3:11]
-            print(f"Payload: {payload.hex(' ')}")
-            print(f"         as decimal: {list(payload)}")
-            print(f"  byte[0..1] as uint16-LE: {int.from_bytes(payload[0:2], 'little')}")
-            print(f"  byte[2..3] as uint16-LE: {int.from_bytes(payload[2:4], 'little')}")
-            print(f"  byte[4..5] as uint16-LE: {int.from_bytes(payload[4:6], 'little')}")
-            print(f"  byte[6..7] as uint16-LE: {int.from_bytes(payload[6:8], 'little')}")
+        if len(r) < 6 or r[0] != 0x2a:
+            print("  (unrecognised packet)")
+            continue
+        msg_type = r[1]
+        payload = r[3:-3]   # strip header (2a type sub) and trailer (checksum 0d 0a)
+        print(f"Type:    0x{msg_type:02x}  sub=0x{r[2]:02x}  payload_len={len(payload)}")
+        print(f"Payload: {payload.hex(' ')}")
+        print(f"         as decimal: {list(payload)}")
+        for i in range(0, len(payload) - 1, 2):
+            le = int.from_bytes(payload[i:i+2], 'little')
+            be = int.from_bytes(payload[i:i+2], 'big')
+            print(f"  byte[{i}..{i+1}]  LE={le:5d}  BE={be:5d}")
 
 
 if __name__ == "__main__":

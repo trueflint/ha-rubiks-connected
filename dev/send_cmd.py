@@ -53,13 +53,20 @@ async def main() -> None:
         except Exception:
             print(f"  [{ts}]  {b.hex(' ')}")
 
-    async with BleakClient(device) as client:
-        await client.start_notify(NOTIFY_UUID, on_notify)
-        await client.write_gatt_char(WRITE_UUID, cmd, response=False)
-        print("Waiting 3 seconds for response and to observe if cube disconnects ...")
-        await asyncio.sleep(3.0)
-        still_connected = client.is_connected
-        print(f"\nStill connected after 3s: {still_connected}")
+    try:
+        async with BleakClient(device) as client:
+            await client.start_notify(NOTIFY_UUID, on_notify)
+            await client.write_gatt_char(WRITE_UUID, cmd, response=False)
+            print("Waiting 3 seconds for response and to observe if cube disconnects ...")
+            await asyncio.sleep(3.0)
+            still_connected = client.is_connected
+            print(f"\nStill connected after 3s: {still_connected}")
+    except TimeoutError:
+        print("Connection timed out — cube may have gone back to sleep.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Connection error: {type(e).__name__}: {e}")
+        sys.exit(1)
 
     if not responses:
         print("No response received.")

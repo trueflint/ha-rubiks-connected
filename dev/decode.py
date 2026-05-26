@@ -43,17 +43,24 @@ async def main() -> None:
     if not device:
         print("Device not found.")
         sys.exit(1)
-
     print(f"Found: {device.name} ({device.address})\nConnecting ...")
-    async with BleakClient(device) as client:
-        await client.start_notify(NOTIFY_UUID, on_notify)
-        print("Listening. Turn faces — Ctrl-C to stop.\n")
-        try:
-            while True:
-                await asyncio.sleep(1)
-        except (KeyboardInterrupt, asyncio.CancelledError):
-            pass
-        await client.stop_notify(NOTIFY_UUID)
+
+    try:
+        async with BleakClient(device) as client:
+            await client.start_notify(NOTIFY_UUID, on_notify)
+            print("Listening. Turn faces — Ctrl-C to stop.\n")
+            try:
+                while True:
+                    await asyncio.sleep(1)
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                pass
+            await client.stop_notify(NOTIFY_UUID)
+    except TimeoutError:
+        print("Connection timed out — cube may have gone back to sleep.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Connection error: {type(e).__name__}: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
