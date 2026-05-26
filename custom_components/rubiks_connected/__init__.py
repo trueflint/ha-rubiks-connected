@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from homeassistant.components.bluetooth import async_ble_device_from_address
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
@@ -38,6 +39,9 @@ class RubiksCoordinator:
             on_state=self._on_state,
             on_connected=self._on_connected,
             on_disconnected=self._on_disconnected,
+            ble_device_getter=lambda: async_ble_device_from_address(
+                hass, address, connectable=True
+            ),
         )
         self._task: asyncio.Task | None = None
 

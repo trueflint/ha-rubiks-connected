@@ -56,7 +56,8 @@ SUB_MOVE    = 0x01
 SUB_BATTERY = 0x05
 SUB_TOGGLE  = 0x06
 
-BATTERY_REQUEST = bytes([0x32])  # single byte written to WRITE_UUID
+BATTERY_REQUEST   = bytes([0x32])  # single byte written to WRITE_UUID
+HANDSHAKE_REQUEST = bytes([0x55])  # cube responds with b"HANDSHAKE"; enables move reporting
 
 
 class Face(str, Enum):

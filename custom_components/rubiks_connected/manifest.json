@@ -8,7 +8,7 @@
   "documentation": "",
   "integration_type": "device",
   "iot_class": "local_push",
-  "requirements": [],
+  "requirements": ["bleak_retry_connector>=3.0.0"],
   "bluetooth": [
     {
       "service_uuid": "6e400001-b5a3-f393-e0a9-e50e24dcca9e"

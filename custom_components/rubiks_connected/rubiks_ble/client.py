@@ -11,6 +11,7 @@ from bleak.exc import BleakError
 
 from .protocol import (
     BATTERY_REQUEST,
+    HANDSHAKE_REQUEST,
     NOTIFY_UUID,
     WRITE_UUID,
     BatteryEvent,
@@ -31,18 +32,20 @@ class RubiksClient:
     def __init__(
         self,
         address: str,
-        on_move:        Callable[[MoveEvent], None],
-        on_battery:     Callable[[int], None],
-        on_state:       Callable[[StateEvent], None] | None = None,
-        on_connected:   Callable[[], None] | None = None,
-        on_disconnected: Callable[[], None] | None = None,
+        on_move:          Callable[[MoveEvent], None],
+        on_battery:       Callable[[int], None],
+        on_state:         Callable[[StateEvent], None] | None = None,
+        on_connected:     Callable[[], None] | None = None,
+        on_disconnected:  Callable[[], None] | None = None,
+        ble_device_getter: Callable[[], object] | None = None,
     ) -> None:
-        self._address        = address
-        self._on_move        = on_move
-        self._on_battery     = on_battery
-        self._on_state       = on_state
-        self._on_connected   = on_connected
-        self._on_disconnected = on_disconnected
+        self._address          = address
+        self._on_move          = on_move
+        self._on_battery       = on_battery
+        self._on_state         = on_state
+        self._on_connected     = on_connected
+        self._on_disconnected  = on_disconnected
+        self._ble_device_getter = ble_device_getter
 
         self._running     = False
         self._stop_event  = asyncio.Event()
@@ -94,6 +97,7 @@ class RubiksClient:
     # ── internals ─────────────────────────────────────────────────────────────
 
     def _handle_notification(self, _char: object, data: bytearray) -> None:
+        _LOGGER.debug("Notification: %s", data.hex(" "))
         event = decode(data)
         if isinstance(event, MoveEvent):
             self._on_move(event)
@@ -119,21 +123,38 @@ class RubiksClient:
                 self._on_disconnected()
 
         _LOGGER.debug("Connecting to %s …", self._address)
-        async with BleakClient(
-            self._address, disconnected_callback=_on_disconnect
-        ) as client:
-            self._client = client
-            _LOGGER.info("Connected to %s", self._address)
 
+        if self._ble_device_getter is not None:
+            from bleak_retry_connector import establish_connection  # noqa: PLC0415
+            ble_device = self._ble_device_getter()
+            if ble_device is None:
+                raise BleakError(f"No BLE device available for {self._address}")
+            client = await establish_connection(
+                BleakClient,
+                ble_device,
+                self._address,
+                disconnected_callback=_on_disconnect,
+            )
+        else:
+            client = BleakClient(self._address, disconnected_callback=_on_disconnect)
+            await client.connect()
+
+        self._client = client
+        _LOGGER.info("Connected to %s", self._address)
+
+        try:
             await client.start_notify(NOTIFY_UUID, self._handle_notification)
+            _LOGGER.debug("Subscribed to notifications on %s", self._address)
+            await client.write_gatt_char(WRITE_UUID, HANDSHAKE_REQUEST, response=False)
+            _LOGGER.debug("Handshake sent to %s", self._address)
             await self.request_battery()
+            _LOGGER.debug("Battery request sent to %s", self._address)
 
             if self._on_connected:
                 self._on_connected()
 
             battery_task = asyncio.create_task(self._battery_loop())
             try:
-                # Wait until disconnected or stop() is called
                 await asyncio.wait(
                     [
                         asyncio.ensure_future(disconnected.wait()),
@@ -143,6 +164,11 @@ class RubiksClient:
                 )
             finally:
                 battery_task.cancel()
-                self._client = None
+        finally:
+            self._client = None
+            try:
+                await client.disconnect()
+            except Exception:  # noqa: BLE001
+                pass
 
         _LOGGER.info("Disconnected from %s", self._address)
