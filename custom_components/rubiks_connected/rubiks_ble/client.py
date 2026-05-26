@@ -11,10 +11,13 @@ from bleak.exc import BleakError
 
 from .protocol import (
     BATTERY_REQUEST,
+    CALIBRATE_REQUEST,
     HANDSHAKE_REQUEST,
     NOTIFY_UUID,
+    STATE_REQUEST,
     WRITE_UUID,
     BatteryEvent,
+    CubeStateEvent,
     MoveEvent,
     StateEvent,
     decode,
@@ -35,6 +38,7 @@ class RubiksClient:
         on_move:          Callable[[MoveEvent], None],
         on_battery:       Callable[[int], None],
         on_state:         Callable[[StateEvent], None] | None = None,
+        on_cube_state:    Callable[[CubeStateEvent], None] | None = None,
         on_connected:     Callable[[], None] | None = None,
         on_disconnected:  Callable[[], None] | None = None,
         ble_device_getter: Callable[[], object] | None = None,
@@ -43,6 +47,7 @@ class RubiksClient:
         self._on_move          = on_move
         self._on_battery       = on_battery
         self._on_state         = on_state
+        self._on_cube_state    = on_cube_state
         self._on_connected     = on_connected
         self._on_disconnected  = on_disconnected
         self._ble_device_getter = ble_device_getter
@@ -50,6 +55,7 @@ class RubiksClient:
         self._running     = False
         self._stop_event  = asyncio.Event()
         self._client: BleakClient | None = None
+        self._state_query_task: asyncio.Task | None = None
 
     # ── public API ────────────────────────────────────────────────────────────
 
@@ -94,6 +100,20 @@ class RubiksClient:
                 WRITE_UUID, BATTERY_REQUEST, response=False
             )
 
+    async def request_cube_state(self) -> None:
+        """Ask the cube for its current tracked state (solved or scrambled)."""
+        if self._client and self._client.is_connected:
+            await self._client.write_gatt_char(
+                WRITE_UUID, STATE_REQUEST, response=False
+            )
+
+    async def calibrate(self) -> None:
+        """Tell the cube the current physical position is solved (0x35)."""
+        if self._client and self._client.is_connected:
+            await self._client.write_gatt_char(
+                WRITE_UUID, CALIBRATE_REQUEST, response=False
+            )
+
     # ── internals ─────────────────────────────────────────────────────────────
 
     def _handle_notification(self, _char: object, data: bytearray) -> None:
@@ -101,10 +121,25 @@ class RubiksClient:
         event = decode(data)
         if isinstance(event, MoveEvent):
             self._on_move(event)
+            self._schedule_state_query()
         elif isinstance(event, BatteryEvent):
             self._on_battery(event.level)
+        elif isinstance(event, CubeStateEvent) and self._on_cube_state:
+            self._on_cube_state(event)
         elif isinstance(event, StateEvent) and self._on_state:
             self._on_state(event)
+
+    def _schedule_state_query(self, delay: float = 2.0) -> None:
+        if self._state_query_task and not self._state_query_task.done():
+            self._state_query_task.cancel()
+        self._state_query_task = asyncio.create_task(self._debounced_state_query(delay))
+
+    async def _debounced_state_query(self, delay: float) -> None:
+        await asyncio.sleep(delay)
+        try:
+            await self.request_cube_state()
+        except Exception:  # noqa: BLE001
+            pass
 
     async def _battery_loop(self) -> None:
         while True:
@@ -149,6 +184,8 @@ class RubiksClient:
             _LOGGER.debug("Handshake sent to %s", self._address)
             await self.request_battery()
             _LOGGER.debug("Battery request sent to %s", self._address)
+            await self.request_cube_state()
+            _LOGGER.debug("Cube state request sent to %s", self._address)
 
             if self._on_connected:
                 self._on_connected()
@@ -165,6 +202,13 @@ class RubiksClient:
             finally:
                 battery_task.cancel()
         finally:
+            if self._state_query_task and not self._state_query_task.done():
+                self._state_query_task.cancel()
+                try:
+                    await self._state_query_task
+                except asyncio.CancelledError:
+                    pass
+            self._state_query_task = None
             self._client = None
             try:
                 await client.disconnect()

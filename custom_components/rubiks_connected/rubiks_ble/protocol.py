@@ -58,6 +58,11 @@ SUB_TOGGLE  = 0x06
 
 BATTERY_REQUEST   = bytes([0x32])  # single byte written to WRITE_UUID
 HANDSHAKE_REQUEST = bytes([0x55])  # cube responds with b"HANDSHAKE"; enables move reporting
+STATE_REQUEST     = bytes([0x33])  # read current tracked cube state
+CALIBRATE_REQUEST = bytes([0x35])  # set tracking to solved; also returns solved reference state
+
+MSG_CUBE_STATE = 0x40
+SUB_CUBE_STATE = 0x02
 
 
 class Face(str, Enum):
@@ -120,11 +125,19 @@ class StateEvent:
         return f"state={self.value}"
 
 
+@dataclass(frozen=True)
+class CubeStateEvent:
+    is_solved: bool
+
+    def __str__(self) -> str:
+        return "solved" if self.is_solved else "scrambled"
+
+
 def _checksum_ok(data: bytes | bytearray) -> bool:
     return (sum(data[:-3]) & 0xFF) == data[-3]
 
 
-def decode(data: bytes | bytearray) -> MoveEvent | BatteryEvent | StateEvent | None:
+def decode(data: bytes | bytearray) -> MoveEvent | BatteryEvent | StateEvent | CubeStateEvent | None:
     """Decode a raw notification payload. Returns None for unrecognised packets."""
     if len(data) < 5 or data[0] != 0x2a:
         return None
@@ -148,5 +161,12 @@ def decode(data: bytes | bytearray) -> MoveEvent | BatteryEvent | StateEvent | N
         if sub_type == SUB_BATTERY:
             return BatteryEvent(level=data[3])
         return StateEvent(value=data[3])
+
+    if msg_type == MSG_CUBE_STATE and sub_type == SUB_CUBE_STATE and len(data) == 66:
+        if not _checksum_ok(data):
+            return None
+        facelets = data[3:57]
+        is_solved = all(facelets[i] == i // 9 for i in range(54))
+        return CubeStateEvent(is_solved=is_solved)
 
     return None

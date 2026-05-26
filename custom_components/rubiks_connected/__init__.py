@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant
 from .const import CONF_ADDRESS, DOMAIN, PLATFORMS
 
 from .rubiks_ble.client import RubiksClient
-from .rubiks_ble.protocol import MoveEvent, StateEvent
+from .rubiks_ble.protocol import CubeStateEvent, MoveEvent, StateEvent
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,17 +26,20 @@ class RubiksCoordinator:
         self.hass           = hass
         self.address        = address
         self.battery_level: int | None = None
+        self.is_solved:     bool | None = None
         self.connected      = False
 
         self._move_listeners:    list[callable] = []
         self._battery_listeners: list[callable] = []
         self._conn_listeners:    list[callable] = []
+        self._solved_listeners:  list[callable] = []
 
         self._client = RubiksClient(
             address=address,
             on_move=self._on_move,
             on_battery=self._on_battery,
             on_state=self._on_state,
+            on_cube_state=self._on_cube_state,
             on_connected=self._on_connected,
             on_disconnected=self._on_disconnected,
             ble_device_getter=lambda: async_ble_device_from_address(
@@ -55,6 +58,15 @@ class RubiksCoordinator:
 
     def register_connection_listener(self, cb: callable) -> None:
         self._conn_listeners.append(cb)
+
+    def register_solved_listener(self, cb: callable) -> None:
+        self._solved_listeners.append(cb)
+
+    # ── public actions ────────────────────────────────────────────────────────
+
+    async def calibrate(self) -> None:
+        """Send 0x35 — tells the cube its current physical state is solved."""
+        await self._client.calibrate()
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -81,6 +93,10 @@ class RubiksCoordinator:
 
     def _on_state(self, event: StateEvent) -> None:
         pass  # reserved for future use
+
+    def _on_cube_state(self, event: CubeStateEvent) -> None:
+        self.is_solved = event.is_solved
+        self.hass.loop.call_soon_threadsafe(self._dispatch_solved, event.is_solved)
 
     def _on_connected(self) -> None:
         self.connected = True
@@ -112,6 +128,13 @@ class RubiksCoordinator:
                 cb(connected)
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("Error in connection listener")
+
+    def _dispatch_solved(self, is_solved: bool) -> None:
+        for cb in self._solved_listeners:
+            try:
+                cb(is_solved)
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Error in solved listener")
 
 
 # ── HA entry points ───────────────────────────────────────────────────────────
