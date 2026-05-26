@@ -85,6 +85,9 @@ class RubiksCoordinator:
     # ── BLE callbacks (called from bleak's thread/loop) ───────────────────────
 
     def _on_move(self, event: MoveEvent) -> None:
+        if self.is_solved is True:
+            self.is_solved = False
+            self.hass.loop.call_soon_threadsafe(self._dispatch_solved, False)
         self.hass.loop.call_soon_threadsafe(self._dispatch_move, event)
 
     def _on_battery(self, level: int) -> None:
