@@ -10,9 +10,12 @@ Notification packet format (cube → host):
   checksum = sum of all bytes before the checksum field, masked to 8 bits.
 
 Known notification types (byte[1], byte[2]):
-  0x06 0x01  Move event  (8 bytes total)
-  0x05 0x06  State toggle (7 bytes total) — motion detected? TBD
-  0x05 0x05  Battery level (7 bytes total)
+  0x06 0x01  Move event       (8 bytes total)
+  0x05 0x05  Battery level    (7 bytes total)
+  0x05 0x06  Motion flag      (7 bytes total) — fires on physical movement; meaning of payload TBD
+  0x05 0x08  Feature flags    (7 bytes total) — static bitmask 0xee (0b11101110); bits 0 and 4 unset
+  0x05 0x09  Status register  (7 bytes total) — payload 0x01
+  0x40 0x02  Cube state       (66 bytes total) — 54-byte facelet array
 
 Move event layout:
   byte[0] = 0x2a  start
@@ -33,8 +36,41 @@ Battery response layout:
   byte[5] = 0x0d
   byte[6] = 0x0a
 
-Battery request (host → cube):
-  Single byte: 0x32  written to the NUS write characteristic.
+Cube state layout:
+  byte[0]    = 0x2a  start
+  byte[1]    = 0x40  type
+  byte[2]    = 0x02  sub-type
+  byte[3:57] = facelets (54 bytes): face 0-5 × 9 stickers, value = face index (0-5)
+               solved when facelets[i] == i // 9 for all i
+  byte[57:63]= padding (6 zero bytes)
+  byte[63]   = checksum
+  byte[64:66]= 0x0d 0x0a
+
+Request commands (host → cube, single byte unless noted):
+  0x32  Battery level request
+  0x33  Cube state read (current tracked state)
+  0x35  Calibrate (set tracking to solved) + returns solved reference cube state
+  0x39  Total play time → ASCII "H#MM#SS"
+  0x4e  IMU diagnostic  → ASCII "IMU_PASS"
+  0x55  Handshake       → ASCII "HANDSHAKE"; must be sent on connect to enable move events
+  0x56  Feature flags read → type=0x05 sub=0x08, payload=0xee (static; not orientation-dependent)
+  0x58  Status register #9 read → type=0x05 sub=0x09, payload=0x01
+  0x59  Status register #8 read → type=0x05 sub=0x08, payload=0x01
+
+  Dangerous commands (do not send):
+  0x31  Deep sleep (requires physical button or charger to recover)
+  0x34  Immediate disconnect
+  0x36  Immediate disconnect
+  0x51  Enter stats session (pauses move reporting until 0x53 sent)
+  0x53  End stats session → ASCII "TEST_FINISHED", then disconnects
+  0x54  Disconnects
+  0x78  Disconnects
+
+IMU note:
+  The cube contains an IMU (confirmed by 0x4e → "IMU_PASS" diagnostic).
+  Raw accelerometer/gyro data is NOT exposed over BLE — no unsolicited pushes
+  and no known poll command returns orientation data. The IMU is used internally
+  for face-layer angle detection only.
 
 Face-ID mapping (calibrated with White-up / Green-front orientation):
   Even IDs = clockwise, odd IDs = counter-clockwise.
@@ -52,9 +88,11 @@ SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 
 MSG_MOVE    = 0x06
 MSG_STATE   = 0x05
-SUB_MOVE    = 0x01
-SUB_BATTERY = 0x05
-SUB_TOGGLE  = 0x06
+SUB_MOVE       = 0x01
+SUB_BATTERY    = 0x05
+SUB_MOTION     = 0x06  # unsolicited; fires on physical movement
+SUB_FLAGS      = 0x08  # feature-flags bitmask (0xee); response to 0x56 and 0x59
+SUB_STATUS9    = 0x09  # status register #9 (0x01); response to 0x58
 
 BATTERY_REQUEST   = bytes([0x32])  # single byte written to WRITE_UUID
 HANDSHAKE_REQUEST = bytes([0x55])  # cube responds with b"HANDSHAKE"; enables move reporting
