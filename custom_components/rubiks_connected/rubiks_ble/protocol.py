@@ -53,9 +53,16 @@ Request commands (host → cube, single byte unless noted):
   0x39  Total play time → ASCII "H#MM#SS"
   0x4e  IMU diagnostic  → ASCII "IMU_PASS"
   0x55  Handshake       → ASCII "HANDSHAKE"; must be sent on connect to enable move events
-  0x56  Feature flags read → type=0x05 sub=0x08, payload=0xee (static; not orientation-dependent)
-  0x58  Status register #9 read → type=0x05 sub=0x09, payload=0x01
-  0x59  Status register #8 read → type=0x05 sub=0x08, payload=0x01
+  0x56  Feature flags read → type=0x05 sub=0x08, payload=0xee (static bitmask, 6/8 bits set)
+  0x58  Status register #9 read → type=0x05 sub=0x09, payload=0x01 (static)
+  0x59  Status register #8 read → type=0x05 sub=0x08, payload=0x01 (static)
+  0x62  Sensor read → type=0x06 sub=0x0c, payload=[0x0f, ~230–240]
+        byte[3]=0x0f constant; byte[4] oscillates ~±10 counts near a threshold.
+        Responds weakly to cube orientation but not to external magnets.
+        Likely IMU internal temperature sensor sitting near a digitisation boundary.
+        Not useful for orientation detection.
+  0x76  Config register read → type=0x06 sub=0x0a, payload=[0x20, 0x00] (fully static)
+        Likely an IMU sample-rate or threshold register.
 
   Dangerous commands (do not send):
   0x31  Deep sleep (requires physical button or charger to recover)
@@ -69,8 +76,11 @@ Request commands (host → cube, single byte unless noted):
 IMU note:
   The cube contains an IMU (confirmed by 0x4e → "IMU_PASS" diagnostic).
   Raw accelerometer/gyro data is NOT exposed over BLE — no unsolicited pushes
-  and no known poll command returns orientation data. The IMU is used internally
-  for face-layer angle detection only.
+  and no known poll command returns usable orientation data. The IMU is used
+  internally for face-layer angle detection only. 0x62 leaks what is likely
+  the IMU's internal temperature sensor (1-byte, ±10-count noise near a
+  threshold), which is not useful for orientation detection. External magnets
+  produced no measurable response, ruling out an accessible magnetometer.
 
 Face-ID mapping (calibrated with White-up / Green-front orientation):
   Even IDs = clockwise, odd IDs = counter-clockwise.
